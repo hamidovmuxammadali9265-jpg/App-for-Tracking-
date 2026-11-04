@@ -1,0 +1,2 @@
+{"appId":"com.muhammadali.ledger","appName":"Ledger","webDir":"www","android":{"backgroundColor":"#14161a"},
+"plugins":{"LocalNotifications":{"smallIcon":"ic_launcher","iconColor":"#ff5d2e"}}}
