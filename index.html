@@ -393,10 +393,17 @@ textarea { resize: vertical; min-height: 70px; }
   #sidebar{display:none}
   #sidebar.open{display:flex;position:fixed;inset:0;z-index:60;width:100%;padding-top:calc(20px + env(safe-area-inset-top))}
 }
-.rem-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.rem-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line-soft)}
 .rem-row:last-child{border-bottom:0}
 .rem-row input[type=time]{width:auto;min-width:96px}
 .rem-row input[type=checkbox]{width:22px;height:22px;accent-color:var(--track)}
+
+.tick{width:30px;height:30px;min-width:30px;border-radius:50%;border:2px solid var(--line);background:transparent;color:#0f1114;font-size:16px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0;margin-right:12px;cursor:pointer}
+.tick.on{background:var(--signal);border-color:var(--signal)}
+.todo-main{display:flex;align-items:center;flex:1;min-width:0}
+.is-done .todo-text{text-decoration:line-through;color:var(--text-faint)}
+.plan-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.plan-row strong,.plan-row .note{grid-column:1/-1}
 </style>
 </head>
 <body>
@@ -504,7 +511,7 @@ function uid() {
 function todayISO(offsetDays = 0) {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
-  return d.toISOString().slice(0, 10);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 function nowISO() { return new Date().toISOString(); }
 function dayName(iso) {
@@ -561,26 +568,15 @@ function closeSidebar() { document.getElementById('sidebar').classList.remove('o
    LEDGER — domain constants & seeding
    ============================================================ */
 
-// day-of-week -> class block for Fall 2026 Webster schedule
-const SCHEDULE = {
-  Monday:    { code: 'ISTL 1550', name: 'Topics in Global Studies', time: '09:00–11:20' },
-  Tuesday:   { code: 'ANSO 1050', name: 'Global Social Problems', time: '14:00–16:20' },
-  Wednesday: { code: 'INTL 1050', name: 'Introduction to International Relations', time: '16:30–18:50' },
-  Thursday:  { code: 'GLBC 1200', name: 'Global Cornerstone Seminar', time: '19:00–21:20' },
-  Friday:    { code: 'EDEX 1500', name: 'Webster 101', time: '19:00–20:30' },
-  Saturday:  null,
-  Sunday:    null
-};
-
 // suggested weekly load shape — used only to seed defaults / label days, never locks the user in
 const DAY_PLAN = {
-  Monday:    { training: 'gym', intensity: 'moderate', note: 'Class morning, gym later — moderate day.' },
-  Tuesday:   { training: 'run', intensity: 'moderate', note: 'Afternoon class — run before or after.' },
-  Wednesday: { training: 'gym', intensity: 'moderate', note: 'Evening class — train earlier in the day.' },
-  Thursday:  { training: 'recovery', intensity: 'light', note: 'Heaviest academic day — keep training light.' },
-  Friday:    { training: 'gym', intensity: 'moderate', note: 'Short evening class — gym earlier.' },
-  Saturday:  { training: 'long_run', intensity: 'hard', note: 'Long run + portfolio/project block.' },
-  Sunday:    { training: 'recovery', intensity: 'light', note: 'Recovery, reflection, language catch-up.' }
+  Monday:    { training: 'gym', intensity: 'moderate', note: 'Strength session.' },
+  Tuesday:   { training: 'run', intensity: 'moderate', note: 'Run day.' },
+  Wednesday: { training: 'recovery', intensity: 'light', note: 'Active recovery.' },
+  Thursday:  { training: 'gym', intensity: 'moderate', note: 'Strength session.' },
+  Friday:    { training: 'run', intensity: 'moderate', note: 'Easy run.' },
+  Saturday:  { training: 'long_run', intensity: 'hard', note: 'Long run or a longer activity.' },
+  Sunday:    { training: 'rest', intensity: 'light', note: 'Rest and plan the week.' }
 };
 
 // performance weighting — default, editable in Settings
@@ -595,7 +591,7 @@ const DEFAULT_WEIGHTS = {
 
 const SKILL_TREE = {
   Academic: ['Research', 'Critical Thinking', 'Academic Writing', 'Argumentation', 'Analysis', 'Presentation'],
-  Languages: ['English (Academic)', 'Spanish'],
+  Languages: ['Speaking', 'Listening', 'Reading', 'Writing'],
   Physical: ['Strength', 'Endurance', 'Mobility', 'Conditioning'],
   Professional: ['Project Management', 'Communication', 'Practical Experience', 'Portfolio']
 };
@@ -617,32 +613,17 @@ const STRENGTH_SPLIT = {
 };
 
 async function seedIfEmpty() {
-  const existing = await dbGetAll('courses');
-  if (existing.length > 0) return;
-
-  // courses from stated schedule
-  for (const day of Object.keys(SCHEDULE)) {
-    const c = SCHEDULE[day];
-    if (!c) continue;
-    const already = (await dbGetAll('courses')).find(x => x.code === c.code);
-    if (already) continue;
-    await dbPut('courses', {
-      id: uid(), code: c.code, name: c.name, professor: '', day, time: c.time,
-      priority: 'medium', status: 'active', notes: ''
-    });
-  }
+  if (await dbGet('meta', 'weights')) return;
 
   // starter habits
   const habitDefs = [
-    { name: 'Reading', category: 'academic', frequency: 'daily', min: '20 min', ideal: '45 min' },
-    { name: 'Spanish exposure', category: 'languages', frequency: 'daily', min: '10 min', ideal: '20 min' },
+    { name: 'Read / learn something', category: 'academic', frequency: 'daily', min: '20 min', ideal: '45 min' },
+    { name: 'Move your body', category: 'physical', frequency: 'daily', min: '10 min walk', ideal: '30 min' },
     { name: 'Sleep logged', category: 'recovery', frequency: 'daily', min: 'logged', ideal: '7h+' },
-    { name: 'One output action', category: 'academic', frequency: 'daily', min: 'one paragraph/problem', ideal: 'full session' },
+    { name: 'One focused work block', category: 'academic', frequency: 'daily', min: '25 min', ideal: '60 min' },
     { name: 'Strength session', category: 'physical', frequency: 'weekly', min: '1x', ideal: '3x/week' },
     { name: 'Run', category: 'physical', frequency: 'weekly', min: '1x', ideal: '2–3x/week' },
-    { name: 'Writing / research block', category: 'academic', frequency: 'weekly', min: '1x', ideal: '1x, 60+ min' },
-    { name: 'Speaking / discussion practice', category: 'languages', frequency: 'weekly', min: '1x', ideal: '2x' },
-    { name: 'Project / portfolio work', category: 'professional', frequency: 'weekly', min: '1x', ideal: '1x, 60+ min' }
+    { name: 'Deep work / project block', category: 'professional', frequency: 'weekly', min: '1x', ideal: '1x, 60+ min' }
   ];
   for (const h of habitDefs) {
     await dbPut('habits', {
@@ -664,7 +645,6 @@ async function seedIfEmpty() {
 
   // weights
   await dbPut('meta', { key: 'weights', value: DEFAULT_WEIGHTS });
-  await dbPut('meta', { key: 'profile', value: { height: 173, weight: 63, sleepNote: 'often short on sleep' } });
 }
 
 async function getWeights() {
@@ -728,87 +708,71 @@ window.addEventListener('hashchange', () => {
 /* ============================================================
    LEDGER — Today page
    ============================================================ */
+async function getMeta(k, def) { const r = await dbGet('meta', k); return r && r.value !== undefined ? r.value : def; }
+async function setMeta(k, v) { await dbPut('meta', { key: k, value: v }); }
+
 async function renderToday() {
   const container = document.getElementById('page-today');
-  const iso = todayISO();
+  const iso = todayISO(); window.__day = iso;
   const dName = dayName(iso);
-  const cls = SCHEDULE[dName];
   const plan = DAY_PLAN[dName];
-
-  const [courses, assignments, habits, habitLogs, runs, strength, recovery, reflections] = await Promise.all([
+  const [courses, assignments, habits, habitLogs, runs, strength, recovery, reflections, events, tasks, doneKeys, user] = await Promise.all([
     dbGetAll('courses'), dbGetAll('assignments'), dbGetAll('habits'), dbGetAll('habitLogs'),
-    dbGetAll('runs'), dbGetAll('strengthSessions'), dbGetAll('recoveryLogs'), dbGetAll('dailyReflections')
+    dbGetAll('runs'), dbGetAll('strengthSessions'), dbGetAll('recoveryLogs'), dbGetAll('dailyReflections'),
+    getMeta('events', []), getMeta('tasks', []), getMeta('done-' + iso, []), getMeta('user', '')
   ]);
-
   const todayLogs = habitLogs.filter(l => l.date === iso);
   const dailyHabits = habits.filter(h => h.frequency === 'daily' && !h.archived);
   const weeklyHabits = habits.filter(h => h.frequency === 'weekly' && !h.archived);
-
-  const dueAssignments = assignments
-    .filter(a => a.status !== 'done' && a.dueDate)
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-    .slice(0, 8);
-
-  const overdue = dueAssignments.filter(a => a.dueDate < iso);
-  const dueSoon = dueAssignments.filter(a => a.dueDate >= iso && daysBetween(iso, a.dueDate) <= 3);
-  const dueLater = dueAssignments.filter(a => a.dueDate >= iso && daysBetween(iso, a.dueDate) > 3);
-
+  const open = assignments.filter(a => a.status !== 'done' && a.dueDate).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 8);
+  const overdue = open.filter(a => a.dueDate < iso);
+  const dueSoon = open.filter(a => a.dueDate >= iso && daysBetween(iso, a.dueDate) <= 3);
+  const dueLater = open.filter(a => a.dueDate >= iso && daysBetween(iso, a.dueDate) > 3);
   const trainedToday = runs.some(r => r.date === iso) || strength.some(s => s.date === iso);
   const recoveryToday = recovery.find(r => r.date === iso);
   const reflectionToday = reflections.find(r => r.date === iso);
+  const dn = k => doneKeys.includes(k);
 
-  // MUST DO: class today, overdue work, anything due within 24h, essential training on hard days
   const must = [];
-  if (cls) must.push({ text: `Class: ${cls.code} — ${cls.name} (${cls.time})`, tag: 'ink' });
-  overdue.forEach(a => must.push({ text: `Overdue: ${escapeHtml(a.title)} (${a.course || ''})`, tag: 'danger' }));
-  dueAssignments.filter(a => a.dueDate === iso).forEach(a => must.push({ text: `Due today: ${escapeHtml(a.title)}`, tag: 'danger' }));
-  if (plan.intensity === 'hard' || plan.training === 'gym' || plan.training === 'run') {
-    must.push({ text: `Training: ${labelTraining(plan.training)} (${plan.intensity})`, tag: 'track' });
+  courses.filter(c => c.day === dName && c.status !== 'dropped').forEach(c =>
+    must.push({ key: 'c:' + c.id, text: `Class: ${escapeHtml(c.code || '')} ${escapeHtml(c.name)} ${c.time ? '(' + escapeHtml(c.time) + ')' : ''}`, tag: 'ink', done: dn('c:' + c.id) }));
+  events.filter(e => e.day === dName).sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach(e =>
+    must.push({ key: 'e:' + e.id, text: `${e.time ? escapeHtml(e.time) + ' · ' : ''}${escapeHtml(e.title)}`, tag: 'ink', done: dn('e:' + e.id) }));
+  overdue.forEach(a => must.push({ key: 'a:' + a.id, kind: 'assign', id: a.id, text: `Overdue: ${escapeHtml(a.title)} (${escapeHtml(a.course || '')})`, tag: 'danger' }));
+  open.filter(a => a.dueDate === iso).forEach(a => must.push({ key: 'a:' + a.id, kind: 'assign', id: a.id, text: `Due today: ${escapeHtml(a.title)}`, tag: 'danger' }));
+  if (plan.training !== 'rest' && (plan.intensity === 'hard' || plan.training === 'gym' || plan.training === 'run')) {
+    must.push({ key: 'train', text: `Training: ${labelTraining(plan.training)} (${plan.intensity})`, tag: 'track', done: trainedToday || dn('train') });
   }
-
-  // SHOULD DO: due soon, weekly habits not yet done this week, language + reading daily habit
+  const mine = tasks.filter(t => t.date === iso || (t.date < iso && !t.done)).map(t => ({ key: 't:' + t.id, kind: 'task', id: t.id, text: escapeHtml(t.text), tag: 'violet', done: t.done }));
   const should = [];
-  dueSoon.forEach(a => should.push({ text: `Due in ${daysBetween(iso, a.dueDate)}d: ${escapeHtml(a.title)}`, tag: 'ink' }));
-  dailyHabits.forEach(h => {
-    const done = todayLogs.some(l => l.habitId === h.id);
-    if (!done) should.push({ text: `${h.name} — min: ${h.minViable}`, tag: 'amber', habitId: h.id });
-  });
-
-  // COULD DO: optional / ideal versions, later deadlines, weekly habits with days left
+  dueSoon.forEach(a => should.push({ key: 'a:' + a.id, kind: 'assign', id: a.id, text: `Due in ${daysBetween(iso, a.dueDate)}d: ${escapeHtml(a.title)}`, tag: 'ink' }));
+  dailyHabits.forEach(h => should.push({ key: 'h:' + h.id, kind: 'habit', id: h.id, text: `${escapeHtml(h.name)}${h.minViable ? ' — min: ' + escapeHtml(h.minViable) : ''}`, tag: 'amber', done: todayLogs.some(l => l.habitId === h.id) }));
   const could = [];
-  dueLater.forEach(a => could.push({ text: `${escapeHtml(a.title)} — due ${shortDate(a.dueDate)}`, tag: 'faint' }));
-  weeklyHabits.forEach(h => could.push({ text: `${h.name} (weekly target: ${h.target})`, tag: 'violet' }));
-  if (plan.training === 'recovery') could.push({ text: 'Light mobility / stretching session', tag: 'violet' });
+  dueLater.forEach(a => could.push({ key: 'a:' + a.id, kind: 'assign', id: a.id, text: `${escapeHtml(a.title)} — due ${shortDate(a.dueDate)}`, tag: 'faint' }));
+  weeklyHabits.forEach(h => could.push({ key: 'h:' + h.id, kind: 'habit', id: h.id, text: `${escapeHtml(h.name)} (weekly: ${escapeHtml(h.target || '')})`, tag: 'violet', done: todayLogs.some(l => l.habitId === h.id) }));
+  if (plan.training === 'recovery') could.push({ key: 'mob', text: 'Light mobility / stretching', tag: 'violet', done: dn('mob') });
 
   const score = await computeDailyScore(iso);
+  const sec = (title, list, emptyMsg) => `<div class="section"><div class="section-head"><div class="section-title">${title} <span class="n">(${list.filter(i => !i.done).length} left)</span></div></div>${list.length ? `<div class="card">${list.map(renderTodoLine).join('')}</div>` : `<div class="empty">${emptyMsg}</div>`}</div>`;
 
   container.innerHTML = `
     <div class="page-head">
       <div>
         <h1 class="page-title">${dName}</h1>
-        <div class="page-sub">${shortDate(iso)} · ${plan.note}</div>
+        <div class="page-sub">${user ? 'Hi ' + escapeHtml(user) + ' · ' : ''}${shortDate(iso)} · <span id="live-clock"></span> · ${escapeHtml(plan.note)}</div>
       </div>
-      <div class="stat ink" style="text-align:right;">
-        <div class="stat-num">${score}%</div>
-        <div class="stat-label">today's weighted score</div>
+      <div class="stat ink" style="text-align:right;"><div class="stat-num">${score}%</div><div class="stat-label">today's weighted score</div></div>
+    </div>
+    <div class="section">
+      <div class="section-head"><div class="section-title">My tasks <span class="n">(${mine.filter(i => !i.done).length} left)</span></div></div>
+      <div class="card">
+        <div class="row" style="gap:8px;margin-bottom:${mine.length ? '10px' : '0'};"><input id="new-task" placeholder="Add a task for today…" style="flex:1;"><button class="btn primary small" id="add-task">Add</button></div>
+        ${mine.map(renderTodoLine).join('')}
       </div>
     </div>
-
-    <div class="section">
-      <div class="section-head"><div class="section-title">Must do <span class="n">(${must.length})</span></div></div>
-      ${must.length ? `<div class="card">${must.map(renderTodoLine).join('')}</div>` : `<div class="empty">Nothing critical today.</div>`}
-    </div>
-
-    <div class="section">
-      <div class="section-head"><div class="section-title">Should do <span class="n">(${should.length})</span></div></div>
-      ${should.length ? `<div class="card">${should.map(renderTodoLine).join('')}</div>` : `<div class="empty">Should-do list is clear.</div>`}
-    </div>
-
-    <div class="section">
-      <div class="section-head"><div class="section-title">Could do <span class="n">(${could.length})</span></div></div>
-      ${could.length ? `<div class="card">${could.map(renderTodoLine).join('')}</div>` : `<div class="empty">Nothing optional queued.</div>`}
-    </div>
-
+    ${sec('Must do', must, 'Nothing critical today.')}
+    ${sec('Should do', should, 'Should-do list is clear.')}
+    ${sec('Could do', could, 'Nothing optional queued.')}
     <div class="section">
       <div class="section-head"><div class="section-title">Tonight</div></div>
       <div class="grid grid-3">
@@ -819,31 +783,55 @@ async function renderToday() {
         </div>
         <div class="card">
           <div class="row between"><strong style="font-size:13px;">Recovery</strong><span class="pill ${recoveryToday ? '' : 'violet'}">${recoveryToday ? 'logged' : 'not yet'}</span></div>
-          <p class="muted" style="font-size:12px;margin:8px 0 10px;">Sleep + readiness — matters most given short sleep is common for you.</p>
+          <p class="muted" style="font-size:12px;margin:8px 0 10px;">Sleep and readiness check-in.</p>
           <button class="btn small" onclick="openRecoveryModal()">Log recovery →</button>
         </div>
         <div class="card">
           <div class="row between"><strong style="font-size:13px;">Reflection</strong><span class="pill ${reflectionToday ? '' : 'amber'}">${reflectionToday ? 'logged' : 'not yet'}</span></div>
-          <p class="muted" style="font-size:12px;margin:8px 0 10px;">Five short prompts to close the day.</p>
+          <p class="muted" style="font-size:12px;margin:8px 0 10px;">A few short prompts to close the day.</p>
           <button class="btn small" onclick="goTo('reflection')">Reflect →</button>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 
-  container.querySelectorAll('[data-habit-quick]').forEach(btn => {
-    btn.addEventListener('click', () => quickLogHabit(btn.dataset.habitQuick));
-  });
+  const addTask = async () => {
+    const inp = document.getElementById('new-task'); const text = inp.value.trim(); if (!text) return;
+    const list = await getMeta('tasks', []); list.push({ id: uid(), text, date: iso, done: false });
+    await setMeta('tasks', list); renderToday();
+  };
+  document.getElementById('add-task').addEventListener('click', addTask);
+  document.getElementById('new-task').addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+  container.onclick = async (e) => {
+    const t = e.target.closest('[data-todo]');
+    if (t) { await toggleTodo(t.dataset.todo, t.dataset.kind, t.dataset.id, iso); renderToday(); return; }
+    const d = e.target.closest('[data-del-task]');
+    if (d) { const list = (await getMeta('tasks', [])).filter(x => x.id !== d.dataset.delTask); await setMeta('tasks', list); renderToday(); }
+  };
+  const clk = document.getElementById('live-clock'); if (clk) clk.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+async function toggleTodo(key, kind, id, iso) {
+  if (kind === 'habit') {
+    const logs = (await dbGetAll('habitLogs')).filter(l => l.habitId === id && l.date === iso);
+    if (logs.length) { for (const l of logs) await dbDelete('habitLogs', l.id); }
+    else await dbPut('habitLogs', { id: uid(), habitId: id, date: iso, level: 'min', createdAt: nowISO() });
+  } else if (kind === 'task') {
+    const list = await getMeta('tasks', []); const t = list.find(x => x.id === id); if (t) t.done = !t.done; await setMeta('tasks', list);
+  } else if (kind === 'assign') {
+    const a = await dbGet('assignments', id); a.status = 'done'; await dbPut('assignments', a); toast('Marked done.');
+  } else {
+    const arr = await getMeta('done-' + iso, []); const i = arr.indexOf(key);
+    if (i >= 0) arr.splice(i, 1); else arr.push(key); await setMeta('done-' + iso, arr);
+  }
 }
 
 function renderTodoLine(item) {
-  const habitAttr = item.habitId ? `data-habit-quick="${item.habitId}"` : '';
-  const action = item.habitId ? `<button class="btn small" ${habitAttr}>Mark done</button>` : '';
-  return `<div class="list-item"><span><span class="pill ${item.tag}">&nbsp;</span> ${item.text}</span>${action}</div>`;
+  const col = item.tag === 'faint' ? 'text-faint' : item.tag;
+  return `<div class="list-item todo ${item.done ? 'is-done' : ''}"><span class="todo-main"><button class="tick ${item.done ? 'on' : ''}" style="${item.done ? '' : 'border-color:var(--' + col + ');'}" data-todo="${item.key}" data-kind="${item.kind || ''}" data-id="${item.id || ''}" aria-label="Toggle done">${item.done ? '✓' : ''}</button><span class="todo-text">${item.text}</span></span>${item.kind === 'task' ? `<button class="btn ghost small" data-del-task="${item.id}">✕</button>` : ''}</div>`;
 }
 
 function labelTraining(t) {
-  return { gym: 'Gym / strength', run: 'Run', long_run: 'Long run', recovery: 'Recovery / mobility' }[t] || t;
+  return { gym: 'Gym / strength', run: 'Run', long_run: 'Long run', recovery: 'Recovery / mobility', rest: 'Rest', other: 'Other activity' }[t] || t;
 }
 
 async function quickLogHabit(habitId) {
@@ -904,8 +892,9 @@ async function renderWeek() {
     .reduce((s, r) => s + (Number(r.distanceKm) || 0), 0);
   const weeklyStrengthCount = strength.filter(s => Object.values(weekDates).includes(s.date)).length;
 
+  const _courses = await dbGetAll('courses'), _events = await getMeta('events', []);
   const dayCards = dnames.map(name => {
-    const cls = SCHEDULE[name];
+    const cls = [..._courses.filter(c => c.day === name && c.status !== 'dropped').map(c => `${c.code || c.name} · ${c.time || ''}`), ..._events.filter(e => e.day === name).map(e => `${e.title} · ${e.time || ''}`)];
     const plan = DAY_PLAN[name];
     const date = weekDates[name];
     const isToday = name === todayName;
@@ -918,7 +907,7 @@ async function renderWeek() {
           <span class="faint mono">${shortDate(date)}</span>
         </div>
         <hr class="hair">
-        ${cls ? `<div class="row" style="gap:8px;"><span class="pill ink">class</span><span style="font-size:13px;">${cls.code} · ${cls.time}</span></div>` : `<div class="faint" style="font-size:12px;">No class</div>`}
+        ${cls.length ? cls.map(x => `<div class="row" style="gap:8px;margin-bottom:4px;"><span class="pill ink">plan</span><span style="font-size:13px;">${escapeHtml(x)}</span></div>`).join('') : `<div class="faint" style="font-size:12px;">Nothing scheduled</div>`}
         <div class="row" style="gap:8px;margin-top:8px;">
           <span class="pill track">${labelTraining(plan.training)}</span>
           <span class="faint" style="font-size:12px;">${plan.intensity}</span>
@@ -1310,6 +1299,7 @@ async function renderAcademic() {
             </div>
             <div style="font-size:13px;margin:4px 0;">${escapeHtml(c.name)}</div>
             <div class="faint" style="font-size:12px;">${escapeHtml(c.time || '')}${c.professor ? ' · ' + escapeHtml(c.professor) : ''}</div>
+            <div class="row" style="margin-top:8px;gap:6px;"><button class="btn ghost small" data-edit-course="${c.id}">Edit</button><button class="btn ghost small" data-del-course="${c.id}">Delete</button></div>
           </div>`).join('')}
       </div>
     </div>
@@ -1344,7 +1334,9 @@ async function renderAcademic() {
   `;
 
   document.getElementById('btn-add-session').addEventListener('click', () => openStudySessionModal(courses));
-  document.getElementById('btn-add-course').addEventListener('click', openCourseModal);
+  document.getElementById('btn-add-course').addEventListener('click', () => openCourseModal());
+  container.querySelectorAll('[data-edit-course]').forEach(b => b.addEventListener('click', () => openCourseModal(courses.find(x => x.id === b.dataset.editCourse))));
+  container.querySelectorAll('[data-del-course]').forEach(b => b.addEventListener('click', async () => { if (confirm('Delete this course?')) { await dbDelete('courses', b.dataset.delCourse); renderAcademic(); } }));
   document.getElementById('btn-add-assignment').addEventListener('click', () => openAssignmentModal(courses));
   container.querySelectorAll('[data-done-assign]').forEach(b => b.addEventListener('click', async () => {
     const a = await dbGet('assignments', b.dataset.doneAssign); a.status = 'done'; await dbPut('assignments', a); renderAcademic();
@@ -1354,32 +1346,29 @@ async function renderAcademic() {
   }));
 }
 
-function openCourseModal() {
+function openCourseModal(c) {
+  if (c && !c.id) c = null;
+  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   openModal(`
-    <h3>Add course</h3>
-    <div class="field"><label>Code</label><input id="c-code" placeholder="e.g. ISTL 1550"></div>
-    <div class="field"><label>Name</label><input id="c-name" placeholder="Course title"></div>
-    <div class="field"><label>Professor</label><input id="c-prof"></div>
+    <h3>${c ? 'Edit' : 'Add'} course</h3>
+    <div class="field"><label>Code</label><input id="c-code" value="${escapeHtml(c ? c.code || '' : '')}" placeholder="e.g. BIO 101"></div>
+    <div class="field"><label>Name</label><input id="c-name" value="${escapeHtml(c ? c.name : '')}" placeholder="Course title"></div>
+    <div class="field"><label>Teacher</label><input id="c-prof" value="${escapeHtml(c ? c.professor || '' : '')}"></div>
     <div class="row">
-      <div class="field" style="flex:1;"><label>Day</label>
-        <select id="c-day">${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d => `<option>${d}</option>`).join('')}</select>
-      </div>
-      <div class="field" style="flex:1;"><label>Time</label><input id="c-time" placeholder="09:00–11:20"></div>
+      <div class="field" style="flex:1;"><label>Day</label><select id="c-day">${days.map(d => `<option ${c && c.day === d ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
+      <div class="field" style="flex:1;"><label>Time</label><input id="c-time" value="${escapeHtml(c ? c.time || '' : '')}" placeholder="09:00–11:20"></div>
     </div>
     <div class="row" style="justify-content:flex-end;margin-top:8px;">
       <button class="btn ghost" onclick="closeModal()">Cancel</button>
       <button class="btn primary" id="save-course">Save</button>
-    </div>
-  `);
+    </div>`);
   document.getElementById('save-course').addEventListener('click', async () => {
     const name = document.getElementById('c-name').value.trim();
     if (!name) { toast('Enter a course name.', true); return; }
-    await dbPut('courses', {
-      id: uid(), code: document.getElementById('c-code').value, name,
-      professor: document.getElementById('c-prof').value, day: document.getElementById('c-day').value,
-      time: document.getElementById('c-time').value, priority: 'medium', status: 'active', notes: ''
-    });
-    closeModal(); toast('Course added.'); renderAcademic();
+    await dbPut('courses', Object.assign({ id: uid(), priority: 'medium', status: 'active', notes: '' }, c || {}, {
+      code: document.getElementById('c-code').value, name, professor: document.getElementById('c-prof').value,
+      day: document.getElementById('c-day').value, time: document.getElementById('c-time').value }));
+    closeModal(); toast('Saved.'); renderAcademic();
   });
 }
 
@@ -1451,45 +1440,42 @@ function openStudySessionModal(courses) {
 /* ============================================================
    LEDGER — Languages page
    ============================================================ */
+async function getLangs() { return getMeta('languages', []); }
 async function renderLanguages() {
   const container = document.getElementById('page-languages');
+  const langs = await getLangs();
   const logs = (await dbGetAll('languageLogs')).sort((a, b) => b.date.localeCompare(a.date));
-  const en = logs.filter(l => l.language === 'English');
-  const es = logs.filter(l => l.language === 'Spanish');
-  const esStreak = computeStreakFromDates(es.map(l => l.date));
-  const enWeak = en.filter(l => l.type === 'weakness');
-
   container.innerHTML = `
     <div class="page-head">
-      <div><h1 class="page-title">Languages</h1><div class="page-sub">English — academic polish. Spanish — building from the ground up.</div></div>
-      <button class="btn primary" id="btn-add-lang">+ Log practice</button>
+      <div><h1 class="page-title">Languages</h1><div class="page-sub">Track any language you are learning or improving.</div></div>
+      <div class="row"><button class="btn ${langs.length ? '' : 'primary'}" id="btn-new-lang">+ Language</button>${langs.length ? '<button class="btn primary" id="btn-add-lang">+ Log practice</button>' : ''}</div>
     </div>
-
-    <div class="grid grid-2">
-      <div class="card">
-        <div class="row between"><strong style="font-size:14px;">English</strong><span class="pill signal">${en.length} sessions</span></div>
-        <p class="muted" style="font-size:13px;margin:8px 0;">Solid conversationally — focus is academic polish: writing precision, argument phrasing, speaking under IELTS-style conditions.</p>
-        <div class="section-title" style="margin-top:10px;">Recent weak points logged</div>
-        ${enWeak.length ? enWeak.slice(0, 5).map(l => `<div class="list-item"><span>${escapeHtml(l.note)}</span><span class="faint mono">${shortDate(l.date)}</span></div>`).join('') : '<div class="faint" style="font-size:12px;padding:8px 0;">None logged yet — log specific gaps as they come up.</div>'}
-      </div>
-      <div class="card">
-        <div class="row between"><strong style="font-size:14px;">Spanish</strong><span class="pill signal">${esStreak}d streak</span></div>
-        <p class="muted" style="font-size:13px;margin:8px 0;">Just starting out — daily exposure matters more than session length right now.</p>
-        <div class="bar-track"><div class="bar-fill" style="width:${clamp(esStreak * 10, 0, 100)}%;background:var(--signal);"></div></div>
-        <div class="faint" style="font-size:11px;margin-top:4px;">${es.length} total sessions logged</div>
-      </div>
-    </div>
-
+    ${langs.length ? `<div class="grid grid-2">${langs.map(l => {
+      const ls = logs.filter(x => x.language === l); const st = computeStreakFromDates(ls.map(x => x.date));
+      const weak = ls.filter(x => x.type === 'weakness').slice(0, 3);
+      return `<div class="card"><div class="row between"><strong style="font-size:14px;">${escapeHtml(l)}</strong><span class="pill signal">${st}d streak</span></div>
+        <div class="bar-track" style="margin:10px 0 4px;"><div class="bar-fill" style="width:${clamp(st * 10, 0, 100)}%;background:var(--signal);"></div></div>
+        <div class="faint" style="font-size:11px;">${ls.length} sessions logged</div>
+        ${weak.map(w => `<div class="list-item"><span>${escapeHtml(w.note || '')}</span><span class="faint mono">${shortDate(w.date)}</span></div>`).join('')}
+        <button class="btn ghost small" data-del-lang="${escapeHtml(l)}" style="margin-top:8px;">Remove</button></div>`; }).join('')}</div>` : '<div class="empty">Add a language to start tracking practice.</div>'}
     <div class="section" style="margin-top:24px;">
       <div class="section-head"><div class="section-title">Recent activity</div></div>
       ${logs.length ? `<div class="card">${logs.slice(0, 15).map(l => `
-        <div class="list-item">
-          <span><span class="pill signal">${escapeHtml(l.language)}</span> <span class="pill ${l.type === 'speaking' ? 'amber' : ''}">${escapeHtml(l.type)}</span> ${escapeHtml(l.note || '')}</span>
-          <span class="faint mono">${shortDate(l.date)}</span>
-        </div>`).join('')}</div>` : `<div class="empty">No language sessions logged yet.</div>`}
-    </div>
-  `;
-  document.getElementById('btn-add-lang').addEventListener('click', openLanguageModal);
+        <div class="list-item"><span><span class="pill signal">${escapeHtml(l.language)}</span> <span class="pill ${l.type === 'speaking' ? 'amber' : ''}">${escapeHtml(l.type)}</span> ${escapeHtml(l.note || '')}</span><span class="faint mono">${shortDate(l.date)}</span></div>`).join('')}</div>` : '<div class="empty">No language sessions logged yet.</div>'}
+    </div>`;
+  document.getElementById('btn-new-lang').addEventListener('click', () => {
+    openModal(`<h3>Add a language</h3><div class="field"><label>Language</label><input id="nl-name" placeholder="e.g. English, Spanish, Korean"></div>
+      <div class="row" style="justify-content:flex-end;margin-top:8px;"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn primary" id="nl-save">Add</button></div>`);
+    document.getElementById('nl-save').addEventListener('click', async () => {
+      const n = document.getElementById('nl-name').value.trim(); if (!n) return;
+      const cur = await getLangs(); if (!cur.includes(n)) cur.push(n); await setMeta('languages', cur); closeModal(); renderLanguages();
+    });
+  });
+  const addBtn = document.getElementById('btn-add-lang'); if (addBtn) addBtn.addEventListener('click', openLanguageModal);
+  container.querySelectorAll('[data-del-lang]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Remove this language? Logged sessions are kept.')) return;
+    await setMeta('languages', (await getLangs()).filter(x => x !== b.dataset.delLang)); renderLanguages();
+  }));
 }
 
 function computeStreakFromDates(dates) {
@@ -1503,33 +1489,21 @@ function computeStreakFromDates(dates) {
   return streak;
 }
 
-function openLanguageModal() {
+async function openLanguageModal() {
+  const langs = await getLangs();
   openModal(`
     <h3>Log language practice</h3>
     <div class="field"><label>Date</label><input type="date" id="l-date" value="${todayISO()}"></div>
-    <div class="field"><label>Language</label>
-      <select id="l-lang"><option>English</option><option>Spanish</option></select>
-    </div>
+    <div class="field"><label>Language</label><select id="l-lang">${langs.map(l => `<option>${escapeHtml(l)}</option>`).join('')}</select></div>
     <div class="field"><label>Type</label>
-      <select id="l-type">
-        <option value="reading">Reading</option><option value="writing">Writing</option>
-        <option value="listening">Listening</option><option value="speaking">Speaking</option>
-        <option value="vocabulary">Vocabulary</option><option value="weakness">Weakness / mistake noticed</option>
-      </select>
+      <select id="l-type"><option value="reading">Reading</option><option value="writing">Writing</option><option value="listening">Listening</option><option value="speaking">Speaking</option><option value="vocabulary">Vocabulary</option><option value="weakness">Weakness / mistake noticed</option></select>
     </div>
     <div class="field"><label>Note</label><textarea id="l-note" placeholder="What did you practice, or what mistake did you notice?"></textarea></div>
-    <div class="row" style="justify-content:flex-end;margin-top:8px;">
-      <button class="btn ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn primary" id="save-lang">Save</button>
-    </div>
-  `);
+    <div class="row" style="justify-content:flex-end;margin-top:8px;"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn primary" id="save-lang">Save</button></div>`);
   document.getElementById('save-lang').addEventListener('click', async () => {
-    const language = document.getElementById('l-lang').value;
-    await dbPut('languageLogs', {
-      id: uid(), date: document.getElementById('l-date').value, language,
-      type: document.getElementById('l-type').value, note: document.getElementById('l-note').value, createdAt: nowISO()
-    });
-    await bumpSkillEvidence(language === 'English' ? 'English (Academic)' : 'Spanish');
+    const language = document.getElementById('l-lang').value, type = document.getElementById('l-type').value;
+    await dbPut('languageLogs', { id: uid(), date: document.getElementById('l-date').value, language, type, note: document.getElementById('l-note').value, createdAt: nowISO() });
+    if (['speaking', 'listening', 'reading', 'writing'].includes(type)) await bumpSkillEvidence(type[0].toUpperCase() + type.slice(1));
     closeModal(); toast('Logged.'); renderLanguages();
   });
 }
@@ -1898,7 +1872,10 @@ async function renderReflection() {
   else await renderWeeklyReflection();
 }
 
+const DEFAULT_PROMPTS = ['What did I accomplish?', 'What did I learn?', 'What was difficult?', 'What should I improve?', "Tomorrow's most important task"];
+async function getPrompts() { return getMeta('prompts', DEFAULT_PROMPTS); }
 async function renderDailyReflection() {
+  const P = await getPrompts();
   const body = document.getElementById('reflection-body');
   const iso = todayISO();
   const existing = (await dbGetAll('dailyReflections')).find(r => r.date === iso);
@@ -1906,11 +1883,11 @@ async function renderDailyReflection() {
 
   body.innerHTML = `
     <div class="card">
-      <div class="field"><label>What did I accomplish?</label><textarea id="r1">${escapeHtml(existing?.accomplished || '')}</textarea></div>
-      <div class="field"><label>What did I learn?</label><textarea id="r2">${escapeHtml(existing?.learned || '')}</textarea></div>
-      <div class="field"><label>What was difficult?</label><textarea id="r3">${escapeHtml(existing?.difficult || '')}</textarea></div>
-      <div class="field"><label>What should I improve?</label><textarea id="r4">${escapeHtml(existing?.improve || '')}</textarea></div>
-      <div class="field"><label>Tomorrow's most important task</label><input id="r5" value="${escapeHtml(existing?.tomorrow || '')}"></div>
+      <div class="field"><label>${escapeHtml(P[0])}</label><textarea id="r1">${escapeHtml(existing?.accomplished || '')}</textarea></div>
+      <div class="field"><label>${escapeHtml(P[1])}</label><textarea id="r2">${escapeHtml(existing?.learned || '')}</textarea></div>
+      <div class="field"><label>${escapeHtml(P[2])}</label><textarea id="r3">${escapeHtml(existing?.difficult || '')}</textarea></div>
+      <div class="field"><label>${escapeHtml(P[3])}</label><textarea id="r4">${escapeHtml(existing?.improve || '')}</textarea></div>
+      <div class="field"><label>${escapeHtml(P[4])}</label><input id="r5" value="${escapeHtml(existing?.tomorrow || '')}"></div>
       <button class="btn primary" id="save-reflection">${existing ? 'Update' : 'Save'} reflection</button>
     </div>
     <div class="section" style="margin-top:24px;">
@@ -2204,6 +2181,7 @@ async function boot() {
   try {
     await openDatabase();
     await seedIfEmpty();
+    await loadCustomizations();
   } catch (err) {
     document.getElementById('pages').innerHTML = `
       <div class="card" style="border-color:var(--danger);">
@@ -2235,9 +2213,9 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();_installEv=
 
 const REM_DEFAULTS=[
  {id:'morning',label:'Plan the day',time:'07:30',days:[0,1,2,3,4,5,6],on:true,body:'Open Today and set your top 3. Minimum viable version counts.'},
- {id:'study',label:'Study block',time:'15:00',days:[1,2,3,4,5],on:true,body:'Start the ugly 25 minutes: input, practice, output.'},
+ {id:'study',label:'Focus block',time:'15:00',days:[1,2,3,4,5],on:true,body:'Start the ugly 25 minutes. Momentum follows.'},
  {id:'train',label:'Training',time:'17:30',days:[1,2,3,4,5,6],on:true,body:'Shoes on. Log the session after, even a short one.'},
- {id:'ielts',label:'IELTS task',time:'20:00',days:[0,1,2,3,4,5,6],on:true,body:'One IELTS task today: speaking, writing, listening or reading.'},
+ {id:'practice',label:'Practice block',time:'20:00',days:[0,1,2,3,4,5,6],on:true,body:'One focused practice task today.'},
  {id:'night',label:'Evening reflection',time:'21:45',days:[0,1,2,3,4,5,6],on:true,body:'Log habits and write 3 lines. Then sleep.'}
 ];
 async function loadRem(){const r=await dbGet('meta','reminders');return r&&r.items?r:{key:'reminders',items:REM_DEFAULTS.map(x=>({...x})),fired:{}};}
@@ -2299,8 +2277,9 @@ async function addReminderCard(){
       ${_installEv?'<button class="btn small" id="rem-install">Install app</button>':''}
     </div>
     ${rec.items.map(it=>`<div class="rem-row"><input type="checkbox" data-rem-on="${it.id}" ${it.on?'checked':''}>
-      <div><div>${it.label}</div><div class="faint" style="font-size:12px;">${it.days.length===7?'Every day':it.days.map(d=>days[d]).join(' ')}</div></div>
-      <input type="time" data-rem-time="${it.id}" value="${it.time}"></div>`).join('')}
+      <div><input data-rem-label="${it.id}" value="${escapeHtml(it.label)}" style="width:100%;"><div class="faint" style="font-size:12px;">${it.days.length===7?'Every day':it.days.map(d=>days[d]).join(' ')}</div></div>
+      <input type="time" data-rem-time="${it.id}" value="${it.time}"><button class="btn ghost small" data-rem-del="${it.id}">✕</button></div>`).join('')}
+    <button class="btn small" id="rem-add" style="margin-top:10px;">+ Add reminder</button>
     <p class="faint" style="font-size:12px;margin:10px 0 0;">${NATIVE?'Reminders are scheduled on your phone and fire even when the app is closed.':'Reminders fire when Ledger is open or was recently used. For the most reliable alerts, install it and keep notifications allowed.'}</p>
   </div></div>`;
   if(c.querySelector('#rem-card'))return;
@@ -2312,9 +2291,13 @@ async function addReminderCard(){
   q('#rem-install')&&q('#rem-install').addEventListener('click',async()=>{_installEv.prompt();await _installEv.userChoice;_installEv=null;c.querySelector('#rem-card').remove();addReminderCard();});
   c.querySelectorAll('[data-rem-on]').forEach(el=>el.addEventListener('change',async()=>{const r=await loadRem();r.items.find(i=>i.id===el.dataset.remOn).on=el.checked;await dbPut('meta',r);if(NATIVE)scheduleNative();toast('Saved');}));
   c.querySelectorAll('[data-rem-time]').forEach(el=>el.addEventListener('change',async()=>{const r=await loadRem();const it=r.items.find(i=>i.id===el.dataset.remTime);it.time=el.value;delete r.fired[it.id];await dbPut('meta',r);if(NATIVE)scheduleNative();toast('Saved');}));
+  const redo = async () => { const x = c.querySelector('#rem-card'); if (x) x.remove(); await addReminderCard(); if (NATIVE) scheduleNative(); };
+  c.querySelectorAll('[data-rem-label]').forEach(el => el.addEventListener('change', async () => { const r = await loadRem(); r.items.find(i => i.id === el.dataset.remLabel).label = el.value || 'Reminder'; await dbPut('meta', r); if (NATIVE) scheduleNative(); toast('Saved'); }));
+  c.querySelectorAll('[data-rem-del]').forEach(el => el.addEventListener('click', async () => { const r = await loadRem(); r.items = r.items.filter(i => i.id !== el.dataset.remDel); await dbPut('meta', r); redo(); }));
+  const addR = c.querySelector('#rem-add'); if (addR) addR.addEventListener('click', async () => { const r = await loadRem(); r.items.push({ id: uid(), label: 'New reminder', time: '09:00', days: [0,1,2,3,4,5,6], on: true, body: 'Time to check in with your plan.' }); await dbPut('meta', r); redo(); });
 }
 const _rsOrig=PAGE_RENDERERS.settings;
-PAGE_RENDERERS.settings=async()=>{await _rsOrig();await addReminderCard();};
+PAGE_RENDERERS.settings=async()=>{await _rsOrig();await addReminderCard();await addSettingsExtras();};
 
 async function startPhoneLayer(){
   if(NATIVE){if(await nativePerm()==='granted')scheduleNative();return;}
@@ -2330,7 +2313,119 @@ async function startPhoneLayer(){
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkReminders();});
 }
 
-boot().then(startPhoneLayer);
+
+/* ============================================================
+   LEDGER — make it yours: plan, schedule, program, prompts, habits
+   ============================================================ */
+const TRAIN_OPTS = { gym: 'Gym / strength', run: 'Run', long_run: 'Long run', recovery: 'Recovery / mobility', rest: 'Rest', other: 'Other activity' };
+const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const optHtml = (o, sel) => Object.entries(o).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+
+async function loadCustomizations() {
+  const plan = await getMeta('plan', null); if (plan) Object.assign(DAY_PLAN, plan);
+  const sp = await getMeta('split', null);
+  if (sp && Object.keys(sp).length) { Object.keys(STRENGTH_SPLIT).forEach(k => delete STRENGTH_SPLIT[k]); Object.assign(STRENGTH_SPLIT, sp); }
+}
+
+function openHabitEdit(h) {
+  const cats = ['academic', 'physical', 'languages', 'professional', 'recovery'];
+  openModal(`<h3>Edit habit</h3>
+    <div class="field"><label>Name</label><input id="eh-name" value="${escapeHtml(h.name)}"></div>
+    <div class="row">
+      <div class="field" style="flex:1;"><label>Category</label><select id="eh-cat">${cats.map(c => `<option value="${c}" ${h.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="field" style="flex:1;"><label>Frequency</label><select id="eh-freq"><option value="daily" ${h.frequency === 'daily' ? 'selected' : ''}>Daily</option><option value="weekly" ${h.frequency === 'weekly' ? 'selected' : ''}>Weekly</option></select></div>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1;"><label>Minimum viable</label><input id="eh-min" value="${escapeHtml(h.minViable || '')}"></div>
+      <div class="field" style="flex:1;"><label>Ideal version</label><input id="eh-ideal" value="${escapeHtml(h.idealVersion || '')}"></div>
+    </div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px;"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn primary" id="eh-save">Save</button></div>`);
+  document.getElementById('eh-save').addEventListener('click', async () => {
+    const name = document.getElementById('eh-name').value.trim(); if (!name) { toast('Enter a name.', true); return; }
+    Object.assign(h, { name, category: document.getElementById('eh-cat').value, frequency: document.getElementById('eh-freq').value, minViable: document.getElementById('eh-min').value, idealVersion: document.getElementById('eh-ideal').value, target: document.getElementById('eh-ideal').value });
+    await dbPut('habits', h); closeModal(); toast('Saved.'); renderSettings().then(() => addSettingsExtras());
+  });
+}
+
+async function addSettingsExtras() {
+  const c = document.getElementById('page-settings'); if (!c || c.querySelector('#setup-card')) return;
+  const [user, events, P, habits] = await Promise.all([getMeta('user', ''), getMeta('events', []), getPrompts(), dbGetAll('habits')]);
+  if (c.querySelector('#setup-card')) return;
+  const evs = events.slice().sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time || '').localeCompare(b.time || ''));
+  const html = `<div id="setup-card">
+    <div class="section"><div class="section-head"><div class="section-title">Your name</div></div><div class="card"><div class="row"><input id="set-name" value="${escapeHtml(user)}" placeholder="Your name" style="flex:1;"><button class="btn primary small" id="save-name">Save</button></div></div></div>
+    <div class="section"><div class="section-head"><div class="section-title">Weekly plan</div></div><div class="card">
+      <p class="muted" style="font-size:13px;margin:0 0 6px;">What you plan to do each day. Change it any time.</p>
+      ${DAYS.map(d => `<div class="plan-row"><strong>${d}</strong>
+        <select data-plan-train="${d}">${optHtml(TRAIN_OPTS, DAY_PLAN[d].training)}</select>
+        <select data-plan-int="${d}">${optHtml({ light: 'Light', moderate: 'Moderate', hard: 'Hard' }, DAY_PLAN[d].intensity)}</select>
+        <input class="note" data-plan-note="${d}" value="${escapeHtml(DAY_PLAN[d].note)}" placeholder="Note for the day"></div>`).join('')}
+      <button class="btn primary small" id="save-plan" style="margin-top:10px;">Save plan</button></div></div>
+    <div class="section"><div class="section-head"><div class="section-title">Weekly schedule <span class="n">(${events.length})</span></div></div><div class="card">
+      <p class="muted" style="font-size:13px;margin:0 0 8px;">Work, classes, practice, anything with a time. Shows on Today and This Week.</p>
+      ${evs.map(e => `<div class="list-item"><span><span class="pill ink">${e.day.slice(0, 3)}</span> ${escapeHtml(e.time || '')} ${escapeHtml(e.title)}</span><button class="btn ghost small" data-del-event="${e.id}">✕</button></div>`).join('')}
+      <div class="plan-row" style="border:0;"><select id="ev-day">${DAYS.map(d => `<option>${d}</option>`).join('')}</select><input id="ev-time" type="time"><input class="note" id="ev-title" placeholder="What is it? e.g. Work shift"></div>
+      <button class="btn small" id="add-event">+ Add to schedule</button></div></div>
+    <div class="section"><div class="section-head"><div class="section-title">Strength program</div></div><div class="card">
+      <p class="muted" style="font-size:13px;margin:0 0 8px;">Up to four workouts. One exercise per line. Leave a name empty to remove it.</p>
+      ${['A', 'B', 'C', 'D'].map(k => `<div class="field"><label>Workout ${k}</label><input data-split-label="${k}" value="${escapeHtml(STRENGTH_SPLIT[k] ? STRENGTH_SPLIT[k].label : '')}" placeholder="Name, e.g. Upper body"><textarea data-split-ex="${k}" placeholder="Exercises, one per line">${escapeHtml(STRENGTH_SPLIT[k] ? STRENGTH_SPLIT[k].exercises.join('\n') : '')}</textarea></div>`).join('')}
+      <button class="btn primary small" id="save-split">Save program</button></div></div>
+    <div class="section"><div class="section-head"><div class="section-title">Reflection questions</div></div><div class="card">
+      ${P.map((q, i) => `<div class="field"><label>Question ${i + 1}</label><input data-prompt="${i}" value="${escapeHtml(q)}"></div>`).join('')}
+      <button class="btn primary small" id="save-prompts">Save questions</button></div></div></div>`;
+  const anchor = c.querySelector('#rem-card');
+  if (anchor) anchor.insertAdjacentHTML('afterend', html); else c.insertAdjacentHTML('afterbegin', html);
+  const q = s => c.querySelector(s), again = () => renderSettings().then(() => { return PAGE_RENDERERS.settings ? addReminderCard().then(addSettingsExtras) : 0; });
+
+  q('#save-name').addEventListener('click', async () => { await setMeta('user', q('#set-name').value.trim()); toast('Saved'); });
+  q('#save-plan').addEventListener('click', async () => {
+    DAYS.forEach(d => { DAY_PLAN[d] = { training: q(`[data-plan-train="${d}"]`).value, intensity: q(`[data-plan-int="${d}"]`).value, note: q(`[data-plan-note="${d}"]`).value }; });
+    await setMeta('plan', DAY_PLAN); toast('Plan saved');
+  });
+  q('#add-event').addEventListener('click', async () => {
+    const title = q('#ev-title').value.trim(); if (!title) { toast('Enter what it is.', true); return; }
+    const list = await getMeta('events', []); list.push({ id: uid(), day: q('#ev-day').value, time: q('#ev-time').value, title });
+    await setMeta('events', list); again();
+  });
+  c.querySelectorAll('[data-del-event]').forEach(b => b.addEventListener('click', async () => { await setMeta('events', (await getMeta('events', [])).filter(e => e.id !== b.dataset.delEvent)); again(); }));
+  q('#save-split').addEventListener('click', async () => {
+    const sp = {};
+    ['A', 'B', 'C', 'D'].forEach(k => { const label = q(`[data-split-label="${k}"]`).value.trim(); if (label) sp[k] = { label, exercises: q(`[data-split-ex="${k}"]`).value.split('\n').map(x => x.trim()).filter(Boolean) }; });
+    if (!Object.keys(sp).length) { toast('Keep at least one workout.', true); return; }
+    Object.keys(STRENGTH_SPLIT).forEach(k => delete STRENGTH_SPLIT[k]); Object.assign(STRENGTH_SPLIT, sp);
+    await setMeta('split', sp); toast('Program saved');
+  });
+  q('#save-prompts').addEventListener('click', async () => { await setMeta('prompts', [...c.querySelectorAll('[data-prompt]')].map(i => i.value.trim() || 'Question')); toast('Saved'); });
+
+  c.querySelectorAll('[data-archive-habit]').forEach(b => {
+    if (b.parentNode.dataset && b.parentNode.dataset.habitWrap) return;
+    const w = document.createElement('span'); w.className = 'row'; w.style.gap = '6px'; w.dataset.habitWrap = '1';
+    const e = document.createElement('button'); e.className = 'btn ghost small'; e.textContent = 'Edit';
+    e.addEventListener('click', () => openHabitEdit(habits.find(h => h.id === b.dataset.archiveHabit)));
+    b.parentNode.insertBefore(w, b); w.appendChild(e); w.appendChild(b);
+  });
+}
+
+function startClock() {
+  const tick = () => {
+    document.querySelectorAll('#live-clock').forEach(e => e.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    if (window.__day && window.__day !== todayISO() && currentPage === 'today') renderToday();
+  };
+  tick(); setInterval(tick, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+}
+
+async function maybeWelcome() {
+  if ((await getMeta('user', null)) !== null) return;
+  openModal(`<h3>Welcome to Ledger</h3>
+    <p class="muted" style="font-size:13px;margin:0 0 12px;">Your personal planner for study, training, habits and reflection. Everything is yours to change: weekly plan, schedule, habits, workouts, languages and reflection questions all live in Settings.</p>
+    <div class="field"><label>What should I call you?</label><input id="wl-name" placeholder="Your name"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:8px;"><button class="btn primary" id="wl-go">Get started</button></div>`);
+  document.getElementById('wl-go').addEventListener('click', async () => { await setMeta('user', document.getElementById('wl-name').value.trim()); closeModal(); if (currentPage === 'today') renderToday(); });
+}
+
+boot().then(() => { startPhoneLayer(); startClock(); maybeWelcome(); });
+
 
 </script>
 </body>
